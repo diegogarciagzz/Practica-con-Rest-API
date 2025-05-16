@@ -1,9 +1,9 @@
 import { pool } from "../db/db.js";
-import CryptoJS from "crypto-js";
+import { hashPassword, verifyPassword } from "../utils/crypto.js";
 
 // OBTENER TODOS LOS USUARIOS
 export const getUsers = (req, res) => {
-    pool.query("SELECT * FROM users", (error, results) => {
+    pool.query("SELECT id, username FROM users", (error, results) => {
         if (error) {
             res.status(500).json({ msg: error, users: [] });
             return;
@@ -15,7 +15,7 @@ export const getUsers = (req, res) => {
 // OBTENER UN USUARIO
 export const getUser = (req, res) => {
     const id = req.params.id;
-    pool.execute("SELECT * FROM users WHERE id = ?", [id], (error, results) => {
+    pool.execute("SELECT id, username FROM users WHERE id = ?", [id], (error, results) => {
         if (error) {
             res.status(500).json({ msg: error, user: [] });
             return;
@@ -27,9 +27,9 @@ export const getUser = (req, res) => {
 // CREAR UN NUEVO USUARIO
 export const postUser = (req, res) => {
     const { username, password } = req.body;
-    const encryptedPassword = CryptoJS.AES.encrypt(password, 'secret').toString();
+    const { hash, salt } = hashPassword(password);
 
-    pool.execute("INSERT INTO users (username, password) VALUES (?, ?)", [username, encryptedPassword], (error, results) => {
+    pool.execute("INSERT INTO users (username, hash, salt) VALUES (?, ?, ?)", [username, hash, salt], (error, results) => {
         if (error) {
             res.status(500).json({ msg: error });
             return;
@@ -42,9 +42,9 @@ export const postUser = (req, res) => {
 export const putUser = (req, res) => {
     const { username, password } = req.body;
     const { id } = req.params;
-    const encryptedPassword = CryptoJS.AES.encrypt(password, 'secret').toString();
+    const { hash, salt } = hashPassword(password);
 
-    pool.execute("UPDATE users SET username = ?, password = ? WHERE id = ?", [username, encryptedPassword, id], (error, results) => {
+    pool.execute("UPDATE users SET username = ?, hash = ?, salt = ? WHERE id = ?", [username, hash, salt, id], (error, results) => {
         if (error) {
             res.status(500).json({ msg: error });
             return;
@@ -79,8 +79,10 @@ export const login = (req, res) => {
             return;
         }
 
-        const decryptedPassword = CryptoJS.AES.decrypt(results[0].password, 'secret').toString(CryptoJS.enc.Utf8);
-        if (decryptedPassword !== password) {
+        const user = results[0];
+        const isValid = verifyPassword(password, user.salt, user.hash);
+
+        if (!isValid) {
             res.status(401).json({ msg: "Contraseña incorrecta" });
             return;
         }
